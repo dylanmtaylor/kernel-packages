@@ -39,7 +39,7 @@ jobs:
             - name: Get sources
               run: |
                   wget https://cdn.kernel.org/pub/linux/kernel/v6.x/linux-6.18.7.tar.xz
-                  wget https://github.com/BoukeHaarsma23/linux-ogc/releases/download/v6.18.7-ogc2/monolithic.patch
+                  wget https://github.com/OpenGamingCollective/linux/releases/download/v6.18.7-ogc2/monolithic.patch
                   tar -xf linux-6.18.7.tar.xz
                   cd linux-6.18.7
                   cp ../config .config
