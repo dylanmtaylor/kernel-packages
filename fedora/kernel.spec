@@ -10,7 +10,7 @@
 %global _is_rc 0
 
 %define _build_id_links none
-%define _disable_source_fetch 0
+%define _disable_source_fetch 1
 
 # See https://fedoraproject.org/wiki/Changes/SetBuildFlagsBuildCheck to why this has to be done
 %if 0%{?fedora} >= 37
@@ -353,9 +353,6 @@ scripts/config -u DEFAULT_HOSTNAME
 
 # Set kernel version string as build salt
 scripts/config --set-str BUILD_SALT "%{kverstr}"
-
-# Finalize the patched config
-make %{?_smp_mflags} %{?llvm_build_env_vars} EXTRAVERSION=-%{krelstr} olddefconfig
 
 # Save configuration for later reuse
 cat .config > config-linux-ogc

@@ -65,28 +65,53 @@ jobs:
                   apt-get install -y build-essential devscripts debhelper dh-python asciidoc-base bc bison cpio dwarves flex jq kmod libdw-dev libiberty-dev libnuma-dev  libslang2-dev lz4 rsync wget xmlto git curl sed
                   apt-get install -y libunwind-dev libpfm4-dev coccinelle openjdk-17-jdk libcapstone-dev libbabeltrace-dev systemtap-sdt-dev libzstd-dev dwarves zstd libbfd-dev libperl-dev libssl-dev
 
-            - name: Get sources
+            - name: Get version
+              id: version
+              shell: bash
               run: |
-                  wget https://cdn.kernel.org/pub/linux/kernel/v6.x/linux-6.19.8.tar.xz
-                  wget https://github.com/OpenGamingCollective/linux/releases/download/v6.19.8-ogc1/monolithic.patch
-                  tar -xf linux-6.19.8.tar.xz
-                  cd linux-6.19.8
-                  cp ../config .config
-                  sed -i 's/^CONFIG_LSM=.*/CONFIG_LSM="landlock,lockdown,yama,integrity,apparmor,bpf"/' .config
-                  patch -Np1 < "../monolithic.patch"
+                  if [ -n "${{ github.event.inputs.version }}" ]; then
+                    OGC_VERSION="${{ github.event.inputs.version }}"
+                  else
+                    TAG="${{ github.ref_name }}"
+                    OGC_VERSION="${TAG#v}"
+                  fi
+                  KERNEL_VERSION="${OGC_VERSION%-ogc*}"
+                  MAJOR_VERSION="${KERNEL_VERSION%%.*}.x"
+                  echo "ogc_version=$OGC_VERSION" >> "$GITHUB_OUTPUT"
+                  echo "kernel_version=$KERNEL_VERSION" >> "$GITHUB_OUTPUT"
+                  echo "major_version=$MAJOR_VERSION" >> "$GITHUB_OUTPUT"
+
+            - name: Download and extract kernel source
+              run: |
+                  KERNEL_VERSION="${{ steps.version.outputs.kernel_version }}"
+                  MAJOR_VERSION="${{ steps.version.outputs.major_version }}"
+                  OGC_VERSION="${{ steps.version.outputs.ogc_version }}"
+                  wget https://cdn.kernel.org/pub/linux/kernel/v${MAJOR_VERSION}/linux-${KERNEL_VERSION}.tar.xz
+                  wget https://github.com/OpenGamingCollective/linux/releases/download/v${OGC_VERSION}/monolithic.patch
+                  tar -xf linux-${KERNEL_VERSION}.tar.xz
+                  cd linux-${KERNEL_VERSION}
+                  patch -Np1 < ../monolithic.patch
+
+            - name: Generate default config
+              run: |
+                  cd linux-${{ steps.version.outputs.kernel_version }}
+                  make defconfig
+
+            - name: Configure kernel
+              uses: OpenGamingCollective/kernel-configurator@5b4abc58a2edf89941180dbbe33b26415db23b0b # v1.0.1
+              with:
+                  config: linux-${{ steps.version.outputs.kernel_version }}/.config
+                  set: |
+                      global.config.set
+                      ubuntu/config.set
+                  unset: |
+                      global.config.unset
+                      ubuntu/config.unset
 
             - name: Build
               run: |
-                  cd linux-6.19.8
-                  make olddefconfig
+                  cd linux-${{ steps.version.outputs.kernel_version }}
                   fakeroot make -j$(nproc) bindeb-pkg
-
-            - name: Get OGC version
-              if: startsWith(github.ref, 'refs/tags/')
-              id: version
-              run: |
-                  TAG="${{ github.ref_name }}"
-                  echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
 
             - name: Setup ORAS
               if: startsWith(github.ref, 'refs/tags/')
@@ -105,7 +130,7 @@ jobs:
               if: startsWith(github.ref, 'refs/tags/')
               id: push
               run: |
-                  VERSION="${{ steps.version.outputs.version }}"
+                  VERSION="${{ steps.version.outputs.ogc_version }}"
                   REPO="${{ env.OCI_REPO }}"
                   cd $GITHUB_WORKSPACE
                   DIGEST=$(oras push --format json "${REPO}:${VERSION}" ./*.deb | jq -r '.digest')
@@ -127,7 +152,7 @@ jobs:
             - name: Sign artifacts
               if: startsWith(github.ref, 'refs/tags/')
               run: |
-                  VERSION="${{ steps.version.outputs.version }}"
+                  VERSION="${{ steps.version.outputs.ogc_version }}"
                   REPO="${{ env.OCI_REPO }}"
                   cosign sign --yes "${REPO}:${VERSION}"
                   cosign sign --yes "${REPO}:latest"
@@ -135,7 +160,7 @@ jobs:
             - name: Verify signature
               if: startsWith(github.ref, 'refs/tags/')
               run: |
-                  VERSION="${{ steps.version.outputs.version }}"
+                  VERSION="${{ steps.version.outputs.ogc_version }}"
                   REPO="${{ env.OCI_REPO }}"
                   cosign verify \
                     --certificate-identity-regexp=".*" \
