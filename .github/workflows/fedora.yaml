@@ -139,6 +139,7 @@ jobs:
               with:
                   config: linux-${{ steps.version.outputs.tar_kver }}/.config
                   set: |
+                      config/generic.config.set
                       config/ogc.config.set
                       fedora/config.set
                   unset: |

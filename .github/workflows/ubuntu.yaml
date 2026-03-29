@@ -130,6 +130,7 @@ jobs:
               with:
                   config: linux-${{ steps.version.outputs.tar_kver }}/.config
                   set: |
+                      config/generic.config.set
                       config/ogc.config.set
                       ubuntu/config.set
                   unset: |
