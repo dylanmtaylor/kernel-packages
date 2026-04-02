@@ -22,6 +22,10 @@ concurrency:
 
 jobs:
     build-rpm:
+        strategy:
+            fail-fast: false
+            matrix:
+                fedora_version: [43, 44]
         runs-on: ubuntu-latest
 
         permissions:
@@ -32,7 +36,7 @@ jobs:
             artifact-metadata: write
 
         container:
-            image: fedora:latest
+            image: fedora:${{ matrix.fedora_version }}
             volumes:
                 - /usr:/usr-host
                 - /opt:/opt-host
@@ -99,7 +103,8 @@ jobs:
               run: |
                   VERSION_PREFIX="${{ steps.version.outputs.ogc_version }}"
                   REPO="${OCI_REPO,,}"
-                  EXISTING=$(oras repo tags "${REPO}" 2>/dev/null | { grep -cE "^${VERSION_PREFIX}\.[0-9]+$" || true; })
+                  EXISTING=$(oras repo tags "${REPO}" 2>/dev/null || true)
+                  EXISTING=$(echo "$EXISTING" | { grep -cE "^${VERSION_PREFIX}\.[0-9]+-fc${{ matrix.fedora_version }}$" || true; })
                   BUILD_NUM=$((EXISTING + 1))
                   echo "build_num=$BUILD_NUM" >> "$GITHUB_OUTPUT"
                   echo "Build number: $BUILD_NUM"
@@ -194,12 +199,12 @@ jobs:
                   cp "$TOPDIR"/RPMS/x86_64/*.rpm /tmp/rpms/ 2>/dev/null || true
                   cp "$TOPDIR"/RPMS/noarch/*.rpm /tmp/rpms/ 2>/dev/null || true
                   cd /tmp/rpms
-                  DIGEST=$(oras push --format json "${REPO}:${VERSION}" ./*.rpm | jq -r '.digest')
+                  DIGEST=$(oras push --format json "${REPO}:${VERSION}-fc${{ matrix.fedora_version }}" ./*.rpm | jq -r '.digest')
                   if [ -z "$DIGEST" ]; then
                       echo "::error::Failed to capture digest from oras push"
                       exit 1
                   fi
-                  oras tag "${REPO}:${VERSION}" latest
+                  oras tag "${REPO}:${VERSION}-fc${{ matrix.fedora_version }}" latest-fc${{ matrix.fedora_version }}
                   echo "digest=$DIGEST" >> "$GITHUB_OUTPUT"
 
             - name: Sign artifacts
@@ -207,8 +212,8 @@ jobs:
               run: |
                   VERSION="${{ steps.version.outputs.ogc_version }}.${{ steps.buildnum.outputs.build_num }}"
                   REPO="${{ env.OCI_REPO }}"
-                  cosign sign --yes "${REPO}:${VERSION}"
-                  cosign sign --yes "${REPO}:latest"
+                  cosign sign --yes "${REPO}:${VERSION}-fc${{ matrix.fedora_version }}"
+                  cosign sign --yes "${REPO}:latest-fc${{ matrix.fedora_version }}"
 
             - name: Attest build provenance
               if: startsWith(github.ref, 'refs/tags/')
@@ -226,4 +231,4 @@ jobs:
                   cosign verify \
                     --certificate-identity-regexp=".*" \
                     --certificate-oidc-issuer="https://token.actions.githubusercontent.com" \
-                    "${REPO}:${VERSION}"
+                    "${REPO}:${VERSION}-fc${{ matrix.fedora_version }}"
